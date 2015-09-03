@@ -2,3 +2,6 @@
 name = "ratelimit"
 version = "0.1.0"
 authors = ["brayniac <brayniac@gmail.com>"]
+
+[dependencies]
+time = "*"
