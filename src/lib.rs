@@ -7,10 +7,6 @@
 
 extern crate time;
 
-use std::thread;
-use std::sync::mpsc;
-use std::sync::mpsc::sync_channel;
-
 // isn't this actually a bucket?
 pub struct Ratelimit {
 	capacity: u64,
