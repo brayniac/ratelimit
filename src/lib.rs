@@ -54,6 +54,17 @@ impl Ratelimit {
 		}
 	}
 
+	/// would ratelimiter block?
+	pub fn would_block(&mut self, count: u64) -> bool {
+
+		self.tick();
+
+		if self.capacity < count {
+			return true;
+		}
+		return false;
+	}
+
 	fn tick(&mut self) {
 		let this_tick = time::precise_time_ns();
 		let interval = this_tick - self.last_tick;
