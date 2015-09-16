@@ -51,18 +51,9 @@ impl Ratelimit {
         })
     }
 
-    /// start running
-    pub fn run(&'static mut self) {
-        // reset time to current
-        self.last_tick = time::precise_time_ns();
-
-        thread::spawn(move || {
-            loop {
-                self.block(1);
-
-                let _ = self.rx.recv();
-            }
-        });
+    pub fn run(&mut self) {
+        self.block(1);
+        let _ = self.rx.recv();
     }
 
     /// give a sender for client to use
