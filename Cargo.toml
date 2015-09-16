@@ -1,7 +1,7 @@
 [package]
 name = "ratelimit"
-version = "0.1.0"
-authors = ["brayniac <brayniac@gmail.com>"]
+version = "0.1.1"
+authors = ["Brian Martin <brayniac@gmail.com>"]
 
 [dependencies]
 time = "*"

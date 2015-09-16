@@ -6,13 +6,18 @@
 
 extern crate time;
 
+use std::thread;
+use std::sync::mpsc;
+
 // isn't this actually a bucket?
 pub struct Ratelimit {
-    capacity: u64,
+    capacity: usize,
     interval: u64,
     ticks: u64,
     last_tick: u64,
     correction: u64,
+    tx: mpsc::SyncSender<()>,
+    rx: mpsc::Receiver<()>,
 }
 
 #[repr(C)]
@@ -31,7 +36,9 @@ impl Ratelimit {
     /// # use ratelimit::Ratelimit;
     ///
     /// let mut r = Ratelimit::new(0, 1).unwrap();
-    pub fn new(capacity: u64, interval: u64) -> Option<Ratelimit> {
+    pub fn new(capacity: usize, interval: u64) -> Option<Ratelimit> {
+
+        let (tx, rx) = mpsc::sync_channel(capacity);
 
         Some(Ratelimit {
             capacity: capacity,
@@ -39,11 +46,32 @@ impl Ratelimit {
             ticks: 0_u64,
             last_tick: time::precise_time_ns(),
             correction: 0_u64,
+            tx: tx,
+            rx: rx,
         })
     }
 
+    /// start running
+    pub fn run(&'static mut self) {
+        // reset time to current
+        self.last_tick = time::precise_time_ns();
+
+        thread::spawn(move || {
+            loop {
+                self.block(1);
+
+                let _ = self.rx.recv();
+            }
+        });
+    }
+
+    /// give a sender for client to use
+    pub fn clone_sender(&mut self) -> mpsc::SyncSender<()> {
+        self.tx.clone()
+    }
+
     /// block until can take
-    pub fn block(&mut self, count: u64) {
+    fn block(&mut self, count: usize) {
         loop {
             self.tick();
             if self.capacity >= count {
@@ -51,26 +79,13 @@ impl Ratelimit {
                 break;
             }
 
-            self.clock_nanosleep(0, 0, &timespec {
-                tv_sec: 0,
-                tv_nsec: 100000
-            },
-                                 None);
+            self.clock_nanosleep(1, 0, &timespec { tv_sec: 0, tv_nsec: 1000 }, None);
         }
     }
 
-    pub fn clock_nanosleep(&mut self,
-                           id: i32,
-                           flags: i32,
-                           req: &timespec,
-                           remain: Option<&mut timespec>)
-                           -> i32 {
+    fn clock_nanosleep(&mut self, id: i32, flags: i32, req: &timespec, remain: Option<&mut timespec>) -> i32 {
         extern {
-            fn clock_nanosleep(clock_id: i32,
-                               flags: i32,
-                               req: *const timespec,
-                               rem: *mut timespec)
-                               -> i32;
+            fn clock_nanosleep(clock_id: i32, flags: i32, req: *const timespec, rem: *mut timespec) -> i32;
         }
         match remain {
             Some(p) => unsafe { clock_nanosleep(id, flags, req as *const _, p as *mut _) },
@@ -78,8 +93,10 @@ impl Ratelimit {
         }
     }
 
-    /// would ratelimiter block?
-    pub fn would_block(&mut self, count: u64) -> bool {
+
+// don't need this if we're doing the channel magic
+/*    /// would ratelimiter block?
+    fn would_block(&mut self, count: usize) -> bool {
 
         self.tick();
 
@@ -87,7 +104,7 @@ impl Ratelimit {
             return true;
         }
         return false;
-    }
+    }*/
 
     fn tick(&mut self) {
         let this_tick = time::precise_time_ns();
@@ -97,7 +114,7 @@ impl Ratelimit {
             let increment = (interval as f64 / self.interval as f64).floor() as u64;
             self.correction += interval - (increment * self.interval);
             self.ticks += increment;
-            self.capacity += increment;
+            self.capacity += increment as usize;
             self.last_tick = this_tick;
         }
 
@@ -105,7 +122,7 @@ impl Ratelimit {
             let increment = (self.correction as f64 / self.interval as f64).floor() as u64;
             self.correction -= increment * self.interval;
             self.ticks += increment;
-            self.capacity += increment;
+            self.capacity += increment as usize;
             self.last_tick = this_tick;
         }
     }
