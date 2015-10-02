@@ -75,9 +75,18 @@ impl Ratelimit {
     }
 
     /// we need fine-grained sleep
-    fn clock_nanosleep(&mut self, id: i32, flags: i32, req: &timespec, remain: Option<&mut timespec>) -> i32 {
+    fn clock_nanosleep(&mut self,
+                       id: i32,
+                       flags: i32,
+                       req: &timespec,
+                       remain: Option<&mut timespec>)
+                       -> i32 {
         extern {
-            fn clock_nanosleep(clock_id: i32, flags: i32, req: *const timespec, rem: *mut timespec) -> i32;
+            fn clock_nanosleep(clock_id: i32,
+                               flags: i32,
+                               req: *const timespec,
+                               rem: *mut timespec)
+                               -> i32;
         }
         match remain {
             Some(p) => unsafe { clock_nanosleep(id, flags, req as *const _, p as *mut _) },

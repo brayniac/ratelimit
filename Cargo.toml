@@ -1,11 +1,11 @@
 [package]
 name = "ratelimit"
-version = "0.1.1"
+version = "0.1.2"
 authors = ["Brian Martin <brayniac@gmail.com>"]
 
 license = "MIT"
 
-description = "a token bucket ratelimiter using synchronous channels"
+description = "[work in progress] a token bucket ratelimiter using synchronous channels"
 
 homepage = "https://github.com/brayniac/heatmap"
 documentation = "http://brayniac.github.io/heatmap"
