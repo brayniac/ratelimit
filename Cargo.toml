@@ -13,7 +13,7 @@ repository = "https://github.com/brayniac/heatmap"
 
 readme = "README.md"
 
-keywords = [ "ratelimit", "token bucket" ]
+keywords = [ "ratelimit", "tokenbucket" ]
 
 
 [dependencies]

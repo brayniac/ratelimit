@@ -6,7 +6,6 @@
 
 extern crate time;
 
-use std::thread;
 use std::sync::mpsc;
 
 pub struct Ratelimit {
