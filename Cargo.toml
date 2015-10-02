@@ -3,5 +3,18 @@ name = "ratelimit"
 version = "0.1.1"
 authors = ["Brian Martin <brayniac@gmail.com>"]
 
+license = "MIT"
+
+description = "a token bucket ratelimiter using synchronous channels"
+
+homepage = "https://github.com/brayniac/heatmap"
+documentation = "http://brayniac.github.io/heatmap"
+repository = "https://github.com/brayniac/heatmap"
+
+readme = "README.md"
+
+keywords = [ "ratelimit", "token bucket" ]
+
+
 [dependencies]
 time = "*"

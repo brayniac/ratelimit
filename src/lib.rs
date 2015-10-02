@@ -1,4 +1,4 @@
-//! A leaky bucket ratelimiter for rust
+//! A token bucket ratelimiter for rust
 
 #![crate_type = "lib"]
 
@@ -9,7 +9,6 @@ extern crate time;
 use std::thread;
 use std::sync::mpsc;
 
-// isn't this actually a bucket?
 pub struct Ratelimit {
     capacity: usize,
     interval: u64,
@@ -51,6 +50,7 @@ impl Ratelimit {
         })
     }
 
+    /// this should be run in a tight-loop in its own thread
     pub fn run(&mut self) {
         self.block(1);
         let _ = self.rx.recv();
@@ -74,6 +74,7 @@ impl Ratelimit {
         }
     }
 
+    /// we need fine-grained sleep
     fn clock_nanosleep(&mut self, id: i32, flags: i32, req: &timespec, remain: Option<&mut timespec>) -> i32 {
         extern {
             fn clock_nanosleep(clock_id: i32, flags: i32, req: *const timespec, rem: *mut timespec) -> i32;
@@ -84,19 +85,7 @@ impl Ratelimit {
         }
     }
 
-
-// don't need this if we're doing the channel magic
-/*    /// would ratelimiter block?
-    fn would_block(&mut self, count: usize) -> bool {
-
-        self.tick();
-
-        if self.capacity < count {
-            return true;
-        }
-        return false;
-    }*/
-
+    /// move the time forward and do bookkeeping
     fn tick(&mut self) {
         let this_tick = time::precise_time_ns();
         let interval = this_tick - self.last_tick;
