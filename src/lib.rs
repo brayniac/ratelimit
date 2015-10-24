@@ -5,9 +5,11 @@
 #![crate_name = "ratelimit"]
 
 extern crate time;
+extern crate shuteye;
 
 use std::sync::mpsc;
-use std::fmt;
+
+use shuteye::*;
 
 const ONE_SECOND: u64 = 1_000_000_000;
 
@@ -22,26 +24,13 @@ pub struct Ratelimit {
     rx: mpsc::Receiver<()>,
 }
 
-#[repr(C)]
-#[derive(Copy, Clone, PartialEq)]
-pub struct timespec {
-    pub tv_sec: i64,
-    pub tv_nsec: i64,
-}
-
-impl fmt::Debug for timespec {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "timespec(sec: {}, nsec: {})", self.tv_sec, self.tv_nsec)
-    }
-}
-
 impl Ratelimit {
 
     /// create a new ratelimit instance
     ///
     /// # Example
     /// ```
-    /// # use ratelimit::Ratelimit;
+    /// # use ratelimit::*;
     ///
     /// let mut r = Ratelimit::new(0, 0, 1, 1).unwrap();
     pub fn new(capacity: usize, start: u64, interval: u64, quantum: usize) -> Option<Ratelimit> {
@@ -60,27 +49,42 @@ impl Ratelimit {
         })
     }
 
-    /// this should be run in a tight-loop in its own thread
+    /// run the ratelimiter
+    ///
+    /// # Example
+    /// ```
+    /// # use ratelimit::*;
+    ///
+    /// let mut r = Ratelimit::new(1, 0, 1, 1).unwrap();
+    ///
+    /// r.run(); // invoke in a tight-loop in its own thread
     pub fn run(&mut self) {
         let take = self.quantum;
         self.block(take);
         for _ in 0..take {
-            let _ = self.rx.recv();
+            let _ = self.rx.try_recv();
         }
     }
 
     /// give a sender for client to use
+    ///
+    /// # Example
+    /// ```
+    /// # use ratelimit::*;
+    ///
+    /// let mut r = Ratelimit::new(0, 0, 1, 1).unwrap();
+    ///
+    /// let sender = r.clone_sender();
     pub fn clone_sender(&mut self) -> mpsc::SyncSender<()> {
         self.tx.clone()
     }
 
-    /// block as long as take says to
+    // block as long as take says to
     fn block(&mut self, count: usize) {
-        //let delay = self.take(time::precise_time_ns(), count);
         match self.take(time::precise_time_ns(), count) {
             Some(ts) => {
                 let start = time::precise_time_ns();
-                self.clock_nanosleep(1, 0, &ts, None);
+                shuteye::clock_nanosleep(1, 0, &ts, None);
                 let stop = time::precise_time_ns();
                 let diff = (stop - start) as i64;
                 assert!(diff > ts.tv_nsec);
@@ -112,27 +116,7 @@ impl Ratelimit {
         Some(timespec { tv_sec: seconds as i64, tv_nsec: nano_seconds as i64 })
     }
 
-    /// we need fine-grained sleep
-    fn clock_nanosleep(&mut self,
-                       id: i32,
-                       flags: i32,
-                       req: &timespec,
-                       remain: Option<&mut timespec>)
-                       -> i32 {
-        extern {
-            fn clock_nanosleep(clock_id: i32,
-                               flags: i32,
-                               req: *const timespec,
-                               rem: *mut timespec)
-                               -> i32;
-        }
-        match remain {
-            Some(p) => unsafe { clock_nanosleep(id, flags, req as *const _, p as *mut _) },
-            _ => unsafe { clock_nanosleep(id, flags, req as *const _, 0 as *mut _) },
-        }
-    }
-
-    /// move the time forward and do bookkeeping
+    // move the time forward and do bookkeeping
     fn tick(&mut self, now: u64) -> u64 {
         //let tick: u64 = (now - self.start) / self.interval;
         let tick: u64 = ((now - self.start) as f64 / self.interval as f64).floor() as u64;
@@ -154,6 +138,7 @@ mod tests {
     use super::*;
 
     extern crate time;
+    extern crate shuteye;
 
     #[test]
     fn test_tick_same() {
@@ -185,10 +170,10 @@ mod tests {
         let mut r = Ratelimit::new(1, 0, 1000, 1).unwrap();
 
         assert_eq!(r.take(0, 1), None);
-        assert_eq!(r.take(0, 1), Some(timespec { tv_sec: 0, tv_nsec: 1000 }));
-        assert_eq!(r.take(0, 1), Some(timespec { tv_sec: 0, tv_nsec: 2000 }));
-        assert_eq!(r.take(1000, 1), Some(timespec { tv_sec: 0, tv_nsec: 2000 }));
-        assert_eq!(r.take(3000, 1), Some(timespec { tv_sec: 0, tv_nsec: 1000 }));
+        assert_eq!(r.take(0, 1), Some(shuteye::timespec { tv_sec: 0, tv_nsec: 1000 }));
+        assert_eq!(r.take(0, 1), Some(shuteye::timespec { tv_sec: 0, tv_nsec: 2000 }));
+        assert_eq!(r.take(1000, 1), Some(shuteye::timespec { tv_sec: 0, tv_nsec: 2000 }));
+        assert_eq!(r.take(3000, 1), Some(shuteye::timespec { tv_sec: 0, tv_nsec: 1000 }));
         assert_eq!(r.take(5000, 1), None);
     }
 }
