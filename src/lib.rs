@@ -8,10 +8,7 @@ extern crate time;
 extern crate shuteye;
 
 use std::sync::mpsc;
-
 use shuteye::*;
-
-const ONE_SECOND: u64 = 1_000_000_000;
 
 pub struct Ratelimit {
     start: u64,
@@ -66,15 +63,24 @@ impl Ratelimit {
         }
     }
 
-    /// give a sender for client to use
+    /// return clone of SyncSender for client use
     ///
     /// # Example
     /// ```
     /// # use ratelimit::*;
     ///
-    /// let mut r = Ratelimit::new(0, 0, 1, 1).unwrap();
+    /// let mut r = Ratelimit::new(1, 0, 1, 1).unwrap();
     ///
     /// let sender = r.clone_sender();
+    ///
+    /// match sender.try_send(()) {
+    ///     Ok(_) => {
+    ///         println!("not limited");
+    ///     },
+    ///     Err(_) => {
+    ///         println!("was limited");
+    ///     },
+    /// }
     pub fn clone_sender(&mut self) -> mpsc::SyncSender<()> {
         self.tx.clone()
     }
@@ -83,19 +89,14 @@ impl Ratelimit {
     fn block(&mut self, count: usize) {
         match self.take(time::precise_time_ns(), count) {
             Some(ts) => {
-                let start = time::precise_time_ns();
-                shuteye::clock_nanosleep(1, 0, &ts, None);
-                let stop = time::precise_time_ns();
-                let diff = (stop - start) as i64;
-                assert!(diff > ts.tv_nsec);
+                let _ = shuteye::sleep(ts);
             },
             None => {},
         }
     }
 
     // return time to sleep until token is available
-    fn take(&mut self, time: u64, count: usize) -> Option<timespec> {
-
+    fn take(&mut self, time: u64, count: usize) -> Option<Timespec> {
         if count == 0 {
             return None;
         }
@@ -110,10 +111,14 @@ impl Ratelimit {
             ((-1 * available + self.quantum as isize - 1) as f64 / (self.quantum as f64)) as u64;
         let wait_time = needed_ticks * self.interval;
         self.available = available;
-        let seconds = (wait_time as f64 / ONE_SECOND as f64).floor() as u64;
-        let nano_seconds = wait_time - seconds * ONE_SECOND;
-
-        Some(timespec { tv_sec: seconds as i64, tv_nsec: nano_seconds as i64 })
+        match Timespec::from_nano(wait_time as i64) {
+            Err(_) => {
+                panic!("error getting Timespec from wait_time");
+            },
+            Ok(ts) => {
+                Some(ts)
+            }
+        }
     }
 
     // move the time forward and do bookkeeping
@@ -170,10 +175,10 @@ mod tests {
         let mut r = Ratelimit::new(1, 0, 1000, 1).unwrap();
 
         assert_eq!(r.take(0, 1), None);
-        assert_eq!(r.take(0, 1), Some(shuteye::timespec { tv_sec: 0, tv_nsec: 1000 }));
-        assert_eq!(r.take(0, 1), Some(shuteye::timespec { tv_sec: 0, tv_nsec: 2000 }));
-        assert_eq!(r.take(1000, 1), Some(shuteye::timespec { tv_sec: 0, tv_nsec: 2000 }));
-        assert_eq!(r.take(3000, 1), Some(shuteye::timespec { tv_sec: 0, tv_nsec: 1000 }));
+        assert_eq!(r.take(0, 1).unwrap().as_nsec(), 1000);
+        assert_eq!(r.take(0, 1).unwrap().as_nsec(), 2000);
+        assert_eq!(r.take(1000, 1).unwrap().as_nsec(), 2000);
+        assert_eq!(r.take(3000, 1).unwrap().as_nsec(), 1000);
         assert_eq!(r.take(5000, 1), None);
     }
 }
