@@ -12,6 +12,7 @@ use shuteye::*;
 
 pub struct Ratelimit {
     start: u64,
+    last_tick: u64,
     capacity: isize,
     interval: u64,
     available: isize,
@@ -40,6 +41,7 @@ impl Ratelimit {
             interval: interval,
             available: capacity as isize, // needs to go negative
             quantum: quantum,
+            last_tick: start,
             tick: 0_u64,
             tx: tx,
             rx: rx,
@@ -54,13 +56,23 @@ impl Ratelimit {
     ///
     /// let mut r = Ratelimit::new(1, 0, 1, 1).unwrap();
     ///
+    /// let sender = r.clone_sender();
+    /// let _ = sender.try_send(());
+    ///
     /// r.run(); // invoke in a tight-loop in its own thread
     pub fn run(&mut self) {
         let take = self.quantum;
         self.block(take);
+        let mut unused = 0;
         for _ in 0..take {
-            let _ = self.rx.try_recv();
+            match self.rx.try_recv() {
+                Ok(..) => {}
+                Err(_) => {
+                    unused += 1;
+                }
+            }
         }
+        self.give(unused);
     }
 
     /// return clone of SyncSender for client use
@@ -90,8 +102,16 @@ impl Ratelimit {
         match self.take(time::precise_time_ns(), count) {
             Some(ts) => {
                 let _ = shuteye::sleep(ts);
-            },
-            None => {},
+            }
+            None => {}
+        }
+    }
+
+    fn give(&mut self, count: usize) {
+        self.available += count as isize;
+
+        if self.available >= self.capacity {
+            self.available = self.capacity;
         }
     }
 
@@ -109,7 +129,7 @@ impl Ratelimit {
         }
         let needed_ticks =
             ((-1 * available + self.quantum as isize - 1) as f64 / (self.quantum as f64)) as u64;
-        let wait_time = needed_ticks * self.interval;
+        let wait_time = needed_ticks * self.interval - (time - self.last_tick);
         self.available = available;
         match Timespec::from_nano(wait_time as i64) {
             Err(_) => {
@@ -129,11 +149,16 @@ impl Ratelimit {
         if self.available >= self.capacity {
             return tick;
         }
+        if tick == self.tick {
+            return tick;
+        }
+
         self.available += ((tick - self.tick) * self.quantum as u64) as isize;
         if self.available > self.capacity {
             self.available = self.capacity as isize;
         }
         self.tick = tick;
+        self.last_tick = now;
         tick
     }
 }
@@ -180,5 +205,13 @@ mod tests {
         assert_eq!(r.take(1000, 1).unwrap().as_nsec(), 2000);
         assert_eq!(r.take(3000, 1).unwrap().as_nsec(), 1000);
         assert_eq!(r.take(5000, 1), None);
+    }
+
+    #[test]
+    fn test_take_2() {
+        let mut r = Ratelimit::new(1, 0, 1000, 1).unwrap();
+
+        assert_eq!(r.take(0, 1), None);
+        assert_eq!(r.take(1, 1).unwrap().as_nsec(), 999);
     }
 }
