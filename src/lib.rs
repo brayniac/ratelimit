@@ -98,7 +98,7 @@ impl Ratelimit {
     }
 
     // block as long as take says to
-    fn block(&mut self, count: usize) {
+    pub fn block(&mut self, count: usize) {
         match self.take(time::precise_time_ns(), count) {
             Some(ts) => {
                 let _ = shuteye::sleep(ts);
