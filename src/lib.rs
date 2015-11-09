@@ -1,4 +1,73 @@
-//! A token bucket ratelimiter for rust
+//! A token bucket ratelimiter for rust which can be used by either a single
+//! thread or shared across threads using a mpsc synchronous channel
+//!
+//!
+//! # Goals
+//! * a simple token bucket ratelimiter
+//! * usable in single or multi thread code
+//!
+//! # Future work
+//! * consider additional types of ratelimiters
+//!
+//! # Usage
+//!
+//! Construct a new `Ratelimit` and call block between actions. For multi-thread
+//! clone the channel sender to pass to the threads, in a separate thread, call
+//! run on the `Ratelimit` in a tight loop.
+//!
+//! # Example
+//!
+//! Construct `Ratelimit` and use in single and then multi-thread modes
+//!
+//! ```
+//!
+//! extern crate time;
+//! extern crate ratelimit;
+//!
+//! use std::thread;
+//! use std::sync::mpsc;
+//!
+//! // create a Ratelimit
+//! let capacity = 1; // bucket can hold 10 tokens
+//! let start = time::precise_time_ns(); // start time
+//! let interval = 1_000_000_000; // 1 second => 1 Hz
+//! let quantum = 1; // 1 token per interval => 1 tokens/s
+//!
+//! let mut ratelimit = ratelimit::Ratelimit::new(
+//!     capacity,
+//!     start,
+//!     interval,
+//!     quantum
+//!     ).unwrap();
+//!
+//! // count down to ignition
+//! println!("Count-down....");
+//! for i in 0..5 {
+//!     println!("T-Minus {}", (5 - i));
+//!     ratelimit.block(1);
+//! }
+//! println!("Ignition!");
+//!
+//! // clone the sender from Ratelimit
+//! let sender = ratelimit.clone_sender();
+//!
+//! // create ratelimited threads
+//! for i in 0..2 {
+//!     let s = sender.clone();
+//!     thread::spawn(move || {
+//!         for x in 0..5 {
+//!             s.send(());
+//!             println!(".");
+//!         }
+//!     });
+//! }
+//!
+//! // run the ratelimiter
+//! thread::spawn(move || {
+//!     loop {
+//!         ratelimit.run();
+//!     }
+//! });
 
 #![crate_type = "lib"]
 
@@ -99,6 +168,9 @@ impl Ratelimit {
 
     // block as long as take says to
     pub fn block(&mut self, count: usize) {
+        if self.interval == 0 {
+            return;
+        }
         match self.take(time::precise_time_ns(), count) {
             Some(ts) => {
                 let _ = shuteye::sleep(ts);
@@ -127,14 +199,14 @@ impl Ratelimit {
             self.available = available;
             return None;
         }
-        let needed_ticks =
-            ((-1 * available + self.quantum as isize - 1) as f64 / (self.quantum as f64)) as u64;
+        let needed_ticks = ((-1 * available + self.quantum as isize - 1) as f64 /
+                            (self.quantum as f64)) as u64;
         let wait_time = needed_ticks * self.interval - (time - self.last_tick);
         self.available = available;
         match Timespec::from_nano(wait_time as i64) {
             Err(_) => {
                 panic!("error getting Timespec from wait_time");
-            },
+            }
             Ok(ts) => {
                 Some(ts)
             }
@@ -143,7 +215,6 @@ impl Ratelimit {
 
     // move the time forward and do bookkeeping
     fn tick(&mut self, now: u64) -> u64 {
-        //let tick: u64 = (now - self.start) / self.interval;
         let tick: u64 = ((now - self.start) as f64 / self.interval as f64).floor() as u64;
 
         if self.available >= self.capacity {

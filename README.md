@@ -1,6 +1,6 @@
 # ratelimit - a token bucket ratelimiter for rust
 
-[placeholder]
+ratelimit provides a token bucket ratelimiter which can be used by a single thread, or shared across threads by using a channel to push tokens to the ratelimiter
 
 [![Build Status](https://travis-ci.org/brayniac/ratelimit.svg?branch=master)](https://travis-ci.org/brayniac/ratelimit)
 [![crates.io](http://meritbadge.herokuapp.com/ratelimit)](https://crates.io/crates/ratelimit)
@@ -21,13 +21,15 @@ Then, add this to your crate root:
 extern crate ratelimit;
 ```
 
+## Documentation
+
+View the docs here: [http://brayniac.github.io/ratelimit/](http://brayniac.github.io/ratelimit/)
+
 ## Features
 
-* it builds!
-
+* token bucket ratelimiter
+* single or multi threaded uses
 
 ## Future work
 
-* better documentation
-* code cleanup
-* examples
+* additional ratelimiter models
