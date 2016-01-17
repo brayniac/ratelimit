@@ -16,5 +16,5 @@ readme = "README.md"
 keywords = [ "ratelimit", "tokenbucket", "rate", "token", "bucket" ]
 
 [dependencies]
-time = "*"
-shuteye = "*"
+time = "0.1.34"
+shuteye = "0.1.0"
