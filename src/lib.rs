@@ -236,7 +236,7 @@ impl Ratelimit {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::Ratelimit;
 
     extern crate time;
     extern crate shuteye;
