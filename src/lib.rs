@@ -92,7 +92,6 @@ pub struct Ratelimit {
 }
 
 impl Ratelimit {
-
     /// create a new ratelimit instance
     ///
     /// # Example
@@ -171,11 +170,8 @@ impl Ratelimit {
         if self.interval == 0 {
             return;
         }
-        match self.take(time::precise_time_ns(), count) {
-            Some(ts) => {
-                let _ = shuteye::sleep(ts);
-            }
-            None => {}
+        if let Some(ts) = self.take(time::precise_time_ns(), count) {
+            let _ = shuteye::sleep(ts);
         }
     }
 
@@ -207,9 +203,7 @@ impl Ratelimit {
             Err(_) => {
                 panic!("error getting Timespec from wait_time");
             }
-            Ok(ts) => {
-                Some(ts)
-            }
+            Ok(ts) => Some(ts),
         }
     }
 
