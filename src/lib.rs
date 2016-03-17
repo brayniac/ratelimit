@@ -107,7 +107,7 @@ impl Ratelimit {
             start: start,
             capacity: capacity as isize,
             interval: interval,
-            available: capacity as isize, // needs to go negative
+            available: 1,
             quantum: quantum,
             last_tick: start,
             tick: 0_u64,
@@ -261,8 +261,20 @@ mod tests {
     }
 
     #[test]
-    fn test_take() {
+    fn test_take_0() {
         let mut r = Ratelimit::new(1, 0, 1000, 1).unwrap();
+
+        assert_eq!(r.take(0, 1), None);
+        assert_eq!(r.take(0, 1).unwrap().as_nsec(), 1000);
+        assert_eq!(r.take(0, 1).unwrap().as_nsec(), 2000);
+        assert_eq!(r.take(1000, 1).unwrap().as_nsec(), 2000);
+        assert_eq!(r.take(3000, 1).unwrap().as_nsec(), 1000);
+        assert_eq!(r.take(5000, 1), None);
+    }
+
+    #[test]
+    fn test_take_1() {
+        let mut r = Ratelimit::new(100, 0, 1000, 1).unwrap();
 
         assert_eq!(r.take(0, 1), None);
         assert_eq!(r.take(0, 1).unwrap().as_nsec(), 1000);
