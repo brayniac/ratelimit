@@ -66,6 +66,11 @@
 
 #![crate_name = "ratelimit"]
 
+#![cfg_attr(feature = "unstable", feature(test))]
+
+#[cfg(feature = "unstable")]
+extern crate test;
+
 extern crate shuteye;
 
 use std::time::{Duration, Instant};
@@ -83,8 +88,7 @@ pub struct Config {
 pub struct Ratelimit {
     config: Config,
     t0: Instant,
-    available: i64,
-    tick: u64,
+    available: f64,
     tx: mpsc::SyncSender<()>,
     rx: mpsc::Receiver<()>,
 }
@@ -209,8 +213,7 @@ impl Ratelimit {
         Ratelimit {
             config: config,
             t0: t0,
-            available: 0,
-            tick: 0,
+            available: 0.0,
             tx: tx,
             rx: rx,
         }
@@ -240,7 +243,7 @@ impl Ratelimit {
                 }
             }
         }
-        self.give(unused);
+        self.give(unused as f64);
     }
 
     /// return clone of SyncSender for client use
@@ -278,68 +281,64 @@ impl Ratelimit {
     /// }
     /// println!("Ignition!");
     pub fn block(&mut self, count: u32) {
-        if self.config.interval == Duration::new(0, 0) {
-            return;
-        }
-        if let Some(ts) = self.take(Instant::now(), count) {
-            let _ = sleep(ts);
+        if let Some(wait) = self.take(Instant::now(), count) {
+            sleep(wait);
         }
     }
 
-    // internal function to give back unused tokens
-    fn give(&mut self, count: u32) {
-        self.available += count as i64;
+    // internal function to add tokens
+    fn give(&mut self, count: f64) {
+        self.available += count;
 
-        if self.available >= self.config.capacity as i64 {
-            self.available = self.config.capacity as i64;
+        if self.available >= self.config.capacity as f64 {
+            self.available = self.config.capacity as f64;
         }
     }
 
     // return time to sleep until tokens are available
     fn take(&mut self, t1: Instant, tokens: u32) -> Option<Duration> {
+
+        // we don't need any tokens, just return
         if tokens == 0 {
             return None;
         }
 
-        let _ = self.tick(t1);
-        let available = self.available - tokens as i64;
-        if available >= 0 {
-            self.available = available;
+        // we have all tokens we need, fast path
+        if self.available >= tokens as f64 {
+            self.available -= tokens as f64;
             return None;
         }
 
-        let needed_ticks = -available as u32 / self.config.quantum;
-        let mut wait_time = self.config.interval * needed_ticks;
-        if t1 > self.t0 {
-            wait_time -= t1 - self.t0;
+        // do the accounting
+        self.tick(t1);
+
+        // do we have the tokens now?
+        if self.available >= tokens as f64 {
+            self.available -= tokens as f64;
+            return None;
         }
-        self.available = available;
-        Some(wait_time)
+
+        // we must wait
+        let need = tokens as f64 - self.available;
+        let wait = self.config.interval * need.ceil() as u32;
+        self.available -= tokens as f64;
+
+        Some(wait)
     }
 
     // move the time forward and do bookkeeping
-    fn tick(&mut self, t1: Instant) -> u64 {
-        let tick = cycles(t1.duration_since(self.t0), self.config.interval) as u64 + self.tick;
+    fn tick(&mut self, t1: Instant) {
+        let t0 = self.t0;
+        let cycles = cycles(t1.duration_since(t0), self.config.interval);
+        let tokens = cycles * self.config.quantum as f64;
 
-        if self.available >= self.config.capacity as i64 {
-            return tick;
-        }
-        if tick == self.tick {
-            return tick;
-        }
-
-        self.available += (tick as i64 - self.tick as i64) * self.config.quantum as i64;
-        if self.available > self.config.capacity as i64 {
-            self.available = self.config.capacity as i64;
-        }
-        self.tick = tick;
+        self.give(tokens);
         self.t0 = t1;
-        tick
     }
 }
 
 // returns the number of cycles of period length within the duration
-fn cycles(duration: Duration, period: Duration) -> f64 {
+pub fn cycles(duration: Duration, period: Duration) -> f64 {
     let d = 1_000_000_000 * duration.as_secs() as u64 + duration.subsec_nanos() as u64;
     let p = 1_000_000_000 * period.as_secs() as u64 + period.subsec_nanos() as u64;
     d as f64 / p as f64
@@ -347,43 +346,97 @@ fn cycles(duration: Duration, period: Duration) -> f64 {
 
 #[cfg(test)]
 mod tests {
-    use super::Ratelimit;
+    #[cfg(feature = "unstable")]
+    extern crate test;
+
+    use super::*;
     use std::time::Duration;
 
     extern crate shuteye;
 
     #[test]
-    fn test_tick_same() {
-        let mut r = Ratelimit::new();
-        let t0 = r.t0;
+    fn test_cycles() {
+        let d = Duration::new(10, 0);
+        assert_eq!(cycles(d, Duration::new(1, 0)), 10.0);
 
-        let tick = r.tick(t0);
-        assert_eq!(tick, r.tick(t0));
+        let d = Duration::new(1, 500_000_000);
+        assert_eq!(cycles(d, Duration::new(1, 0)), 1.5);
+
+        let d = Duration::new(1, 0);
+        assert_eq!(cycles(d, Duration::new(0, 1000000)), 1000.0);
+
+        let d = Duration::new(1, 0);
+        assert_eq!(cycles(d, Duration::new(0, 2000000)), 500.0);
+
+        let d = Duration::new(0, 1000);
+        assert_eq!(cycles(d, Duration::new(0, 2000000)), 0.0005);
+
+        let d = Duration::new(0, 0);
+        assert_eq!(cycles(d, Duration::new(0, 2000000)), 0.0);
+
+        let d = Duration::new(0, 1);
+        assert_eq!(cycles(d, Duration::new(0, 1)), 1.0);
     }
 
     #[test]
-    fn test_tick_next() {
-        let mut r = Ratelimit::new();
-        let t0 = r.t0;
+    fn test_give() {
+        let mut r = Ratelimit::configure().capacity(1000).build();
 
-        assert_eq!(r.tick(t0), 0);
-        assert_eq!(r.tick(t0 + Duration::new(0, 1)), 0);
-        assert_eq!(r.tick(t0 + Duration::new(0, 999_999_999)), 0);
-        assert_eq!(r.tick(t0 + Duration::new(1, 0)), 1);
-        assert_eq!(r.tick(t0 + Duration::new(1, 1)), 1);
-        assert_eq!(r.tick(t0 + Duration::new(1, 999_999_999)), 1);
-        assert_eq!(r.tick(t0 + Duration::new(2, 0)), 2);
+        assert_eq!(r.available, 0.0);
+        
+        r.give(1.0);
+        assert_eq!(r.available, 1.0);
+
+        r.give(1.5);
+        assert_eq!(r.available, 2.5);
+    }
+
+    #[test]
+    fn test_tick() {
+        let mut r = Ratelimit::configure().capacity(1000).build();
+        let t = r.t0;
+        r.tick(t + Duration::new(1, 0));
+        assert_eq!(r.available, 1.0);
+        let t = r.t0;
+        r.tick(t + Duration::new(0, 500_000_000));
+        assert_eq!(r.available, 1.5);
     }
 
     #[test]
     fn test_take() {
-        let mut r = Ratelimit::new();
-        let mut t = r.t0;
-        t += Duration::new(1, 0);
+        let mut r = Ratelimit::configure().frequency(1000).capacity(1000).build();
+        let t = r.t0;
+        assert_eq!(r.take(t + Duration::new(1, 0), 1000), None);
+        assert_eq!(r.take(t + Duration::new(1, 0), 1000), Some(Duration::new(1, 0)));
+        assert_eq!(r.take(t + Duration::new(2, 0), 1000), Some(Duration::new(1, 0)));
+        assert_eq!(r.take(t + Duration::new(4, 0), 1000), None);
+    }
 
-        assert_eq!(r.take(t, 1), None);
+    #[cfg(feature = "unstable")]
+    #[bench]
+    fn block_1_million_per_second_1000ns(b: &mut test::Bencher) {
+        let mut r = Ratelimit::configure().capacity(10000).frequency(1_000_000).build();
+        b.iter(|| r.block(1));
+    }
 
-        t += Duration::new(0, 1);
-        assert_eq!(r.take(t, 1).unwrap().subsec_nanos(), 999_999_999);
+    #[cfg(feature = "unstable")]
+    #[bench]
+    fn block_2_million_per_second_500ns(b: &mut test::Bencher) {
+        let mut r = Ratelimit::configure().capacity(10000).frequency(2_000_000).build();
+        b.iter(|| r.block(1));
+    }
+
+    #[cfg(feature = "unstable")]
+    #[bench]
+    fn block_10_million_per_second_100ns(b: &mut test::Bencher) {
+        let mut r = Ratelimit::configure().capacity(10000).frequency(10_000_000).build();
+        b.iter(|| r.block(1));
+    }
+
+    #[cfg(feature = "unstable")]
+    #[bench]
+    fn block_20_million_per_second_50ns(b: &mut test::Bencher) {
+        let mut r = Ratelimit::configure().capacity(10000).frequency(20_000_000).build();
+        b.iter(|| r.block(1));
     }
 }
