@@ -19,3 +19,6 @@ include = [ "src/**/*", "README.md", "LICENSE-*", "Cargo.toml" ]
 
 [dependencies]
 shuteye = "0.2.0"
+
+[features]
+unstable = []
