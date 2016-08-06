@@ -383,7 +383,7 @@ mod tests {
         let mut r = Ratelimit::configure().capacity(1000).build();
 
         assert_eq!(r.available, 0.0);
-        
+
         r.give(1.0);
         assert_eq!(r.available, 1.0);
 
@@ -407,8 +407,10 @@ mod tests {
         let mut r = Ratelimit::configure().frequency(1000).capacity(1000).build();
         let t = r.t0;
         assert_eq!(r.take(t + Duration::new(1, 0), 1000), None);
-        assert_eq!(r.take(t + Duration::new(1, 0), 1000), Some(Duration::new(1, 0)));
-        assert_eq!(r.take(t + Duration::new(2, 0), 1000), Some(Duration::new(1, 0)));
+        assert_eq!(r.take(t + Duration::new(1, 0), 1000),
+                   Some(Duration::new(1, 0)));
+        assert_eq!(r.take(t + Duration::new(2, 0), 1000),
+                   Some(Duration::new(1, 0)));
         assert_eq!(r.take(t + Duration::new(4, 0), 1000), None);
     }
 
