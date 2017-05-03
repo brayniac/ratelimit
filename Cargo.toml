@@ -1,6 +1,6 @@
 [package]
 name = "ratelimit"
-version = "0.3.1"
+version = "0.3.2-pre"
 authors = ["Brian Martin <brayniac@gmail.com>"]
 
 license = "MIT OR Apache-2.0"
@@ -18,7 +18,7 @@ keywords = [ "ratelimit", "tokenbucket", "rate", "token", "bucket" ]
 include = [ "src/**/*", "README.md", "LICENSE-*", "Cargo.toml" ]
 
 [dependencies]
-shuteye = "0.2.0"
+shuteye = "0.3.0"
 
 [features]
 unstable = []
