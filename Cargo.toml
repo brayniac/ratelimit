@@ -15,7 +15,7 @@ readme = "README.md"
 
 keywords = [ "ratelimit", "tokenbucket", "rate", "token", "bucket" ]
 
-include = [ "src/**/*", "README.md", "LICENSE-*", "Cargo.toml" ]
+exclude = [ "scripts" ]
 
 [dependencies]
 shuteye = "0.3.0"
