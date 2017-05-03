@@ -8,7 +8,7 @@ license = "MIT OR Apache-2.0"
 description = "a token bucket ratelimiter"
 
 homepage = "https://github.com/brayniac/ratelimit"
-documentation = "http://brayniac.github.io/ratelimit"
+documentation = "https://docs.rs/ratelimit"
 repository = "https://github.com/brayniac/ratelimit"
 
 readme = "README.md"
