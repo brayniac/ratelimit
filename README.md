@@ -23,7 +23,7 @@ extern crate ratelimit;
 
 ## Documentation
 
-View the docs here: [http://brayniac.github.io/ratelimit/](http://brayniac.github.io/ratelimit/)
+View the docs here: [https://docs.rs/ratelimit/](https://docs.rs/ratelimit/)
 
 ## Features
 

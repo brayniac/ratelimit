@@ -73,10 +73,10 @@ extern crate test;
 
 extern crate shuteye;
 
-use std::time::{Duration, Instant};
-use std::sync::mpsc;
 
 use shuteye::sleep;
+use std::sync::mpsc;
+use std::time::{Duration, Instant};
 
 pub struct Config {
     start: Instant,
@@ -404,7 +404,10 @@ mod tests {
 
     #[test]
     fn test_take() {
-        let mut r = Ratelimit::configure().frequency(1000).capacity(1000).build();
+        let mut r = Ratelimit::configure()
+            .frequency(1000)
+            .capacity(1000)
+            .build();
         let t = r.t0;
         assert_eq!(r.take(t + Duration::new(1, 0), 1000), None);
         assert_eq!(r.take(t + Duration::new(1, 0), 1000),
@@ -417,28 +420,40 @@ mod tests {
     #[cfg(feature = "unstable")]
     #[bench]
     fn block_1_million_per_second_1000ns(b: &mut test::Bencher) {
-        let mut r = Ratelimit::configure().capacity(10000).frequency(1_000_000).build();
+        let mut r = Ratelimit::configure()
+            .capacity(10000)
+            .frequency(1_000_000)
+            .build();
         b.iter(|| r.block(1));
     }
 
     #[cfg(feature = "unstable")]
     #[bench]
     fn block_2_million_per_second_500ns(b: &mut test::Bencher) {
-        let mut r = Ratelimit::configure().capacity(10000).frequency(2_000_000).build();
+        let mut r = Ratelimit::configure()
+            .capacity(10000)
+            .frequency(2_000_000)
+            .build();
         b.iter(|| r.block(1));
     }
 
     #[cfg(feature = "unstable")]
     #[bench]
     fn block_10_million_per_second_100ns(b: &mut test::Bencher) {
-        let mut r = Ratelimit::configure().capacity(10000).frequency(10_000_000).build();
+        let mut r = Ratelimit::configure()
+            .capacity(10000)
+            .frequency(10_000_000)
+            .build();
         b.iter(|| r.block(1));
     }
 
     #[cfg(feature = "unstable")]
     #[bench]
     fn block_20_million_per_second_50ns(b: &mut test::Bencher) {
-        let mut r = Ratelimit::configure().capacity(10000).frequency(20_000_000).build();
+        let mut r = Ratelimit::configure()
+            .capacity(10000)
+            .frequency(20_000_000)
+            .build();
         b.iter(|| r.block(1));
     }
 }
