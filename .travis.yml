@@ -1,14 +1,26 @@
 language: rust
+cache: cargo
 rust:
 - stable
 - beta
 - nightly
-os:
-- linux
-- osx
-after_success: sh scripts/travis-doc-upload.sh
+os: linux
+env: TYPE=default RUST_BACKTRACE=1
 matrix:
   include:
     - os: linux
       rust: nightly
+      env: TYPE=bench RUST_BACKTRACE=1
       script: cargo bench --features unstable
+    - os: linux
+      rust: nightly
+      env: TYPE=rustfmt RUST_BACKTRACE=1
+      script:
+        - (travis_wait 20 cargo install rustfmt || true)
+        - cargo fmt -- --write-mode=diff
+    - os: linux
+      rust: nightly
+      env: TYPE=clippy RUST_BACKTRACE=1
+      script:
+        - (travis_wait 20 cargo install clippy || true)
+        - cargo clippy
