@@ -3,7 +3,7 @@ name = "ratelimit"
 version = "0.4.1-pre"
 authors = ["Brian Martin <brayniac@gmail.com>"]
 
-license = "MIT OR Apache-2.0"
+license = "MIT/Apache-2.0"
 
 description = "a token bucket ratelimiter"
 
@@ -14,8 +14,6 @@ repository = "https://github.com/brayniac/ratelimit"
 readme = "README.md"
 
 keywords = [ "ratelimit", "tokenbucket", "rate", "token", "bucket" ]
-
-exclude = [ "scripts" ]
 
 [dependencies]
 shuteye = "0.3.0"

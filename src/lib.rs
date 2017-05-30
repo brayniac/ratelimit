@@ -62,9 +62,7 @@
 //!     }
 //! });
 
-#![crate_type = "lib"]
-
-#![crate_name = "ratelimit"]
+#![deny(warnings)]
 
 #![cfg_attr(feature = "unstable", feature(test))]
 
