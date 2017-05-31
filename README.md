@@ -2,9 +2,18 @@
 
 ratelimit provides a token bucket ratelimiter which can be used by a single thread, or shared across threads by using a channel to push tokens to the ratelimiter
 
-[![Build Status](https://travis-ci.org/brayniac/ratelimit.svg?branch=master)](https://travis-ci.org/brayniac/ratelimit)
-[![crates.io](http://meritbadge.herokuapp.com/ratelimit)](https://crates.io/crates/ratelimit)
-[![License](http://img.shields.io/:license-mit-blue.svg)](http://doge.mit-license.org)
+The API documentation of this library can be found at
+[docs.rs/ratelimit](https://docs.rs/ratelimit/).
+
+[![travis-badge][]][travis] [![downloads-badge][] ![release-badge][]][crate] [![license-badge][]](#license)
+
+[travis-badge]: https://img.shields.io/travis/brayniac/ratelimit/master.svg
+[downloads-badge]: https://img.shields.io/crates/d/ratelimit.svg
+[release-badge]: https://img.shields.io/crates/v/ratelimit.svg
+[license-badge]: https://img.shields.io/crates/l/ratelimit.svg
+[travis]: https://travis-ci.org/brayniac/ratelimit
+[crate]: https://crates.io/crates/ratelimit
+[Cargo]: https://github.com/rust-lang/cargo
 
 ## Usage
 
@@ -20,10 +29,6 @@ Then, add this to your crate root:
 ```rust
 extern crate ratelimit;
 ```
-
-## Documentation
-
-View the docs here: [https://docs.rs/ratelimit/](https://docs.rs/ratelimit/)
 
 ## Features
 
