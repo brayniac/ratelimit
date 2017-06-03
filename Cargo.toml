@@ -16,7 +16,7 @@ readme = "README.md"
 keywords = [ "ratelimit", "tokenbucket", "rate", "token", "bucket" ]
 
 [dependencies]
-shuteye = "0.3.0"
+shuteye = "0.3.2"
 
 [features]
 unstable = []
