@@ -408,10 +408,14 @@ mod tests {
             .build();
         let t = r.t0;
         assert_eq!(r.take(t + Duration::new(1, 0), 1000), None);
-        assert_eq!(r.take(t + Duration::new(1, 0), 1000),
-                   Some(Duration::new(1, 0)));
-        assert_eq!(r.take(t + Duration::new(2, 0), 1000),
-                   Some(Duration::new(1, 0)));
+        assert_eq!(
+            r.take(t + Duration::new(1, 0), 1000),
+            Some(Duration::new(1, 0))
+        );
+        assert_eq!(
+            r.take(t + Duration::new(2, 0), 1000),
+            Some(Duration::new(1, 0))
+        );
         assert_eq!(r.take(t + Duration::new(4, 0), 1000), None);
     }
 
