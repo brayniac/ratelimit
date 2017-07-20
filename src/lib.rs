@@ -11,23 +11,21 @@
 //!
 //! # Usage
 //!
-//! Construct a new `Ratelimit` and call block between actions. For multi-thread
+//! Construct a new `Limiter` and call block between actions. For multi-thread
 //! clone the channel sender to pass to the threads, in a separate thread, call
-//! run on the `Ratelimit` in a tight loop.
+//! run on the `Limiter` in a tight loop.
 //!
-//! # Example
+//! # Examples
 //!
-//! Construct `Ratelimit` and use in single and then multi-thread modes
+//! Construct `Limiter` to do a count-down.
 //!
 //! ```
-//!
 //! extern crate ratelimit;
 //!
 //! use std::thread;
-//! use std::sync::mpsc;
 //! use std::time::Duration;
 //!
-//! let mut ratelimit = ratelimit::Ratelimit::configure()
+//! let mut ratelimit = ratelimit::Builder::new()
 //!     .capacity(1) //number of tokens the bucket will hold
 //!     .quantum(1) //add one token per interval
 //!     .interval(Duration::new(1, 0)) //add quantum tokens every 1 second
@@ -37,32 +35,65 @@
 //! println!("Count-down....");
 //! for i in -10..0 {
 //!     println!("T {}", i);
-//!     ratelimit.block(1);
+//!     ratelimit.wait();
 //! }
 //! println!("Ignition!");
 //!
-//! // clone the sender from Ratelimit
-//! let sender = ratelimit.clone_sender();
+//! // make a multithreaded version
+//! let multi = ratelimit.sync();
 //!
-//! // create ratelimited threads
-//! for i in 0..2 {
-//!     let s = sender.clone();
+//! // count down in a more awkward way
+//! let mut threads = Vec::new();
+//! static NUMS: &[&str] = &["Three", "Two", "One"];
+//! for num in &NUMS[..] {
+//!     let handle = multi.make_handle();
+//!     threads.push(thread::spawn(move || {
+//!         handle.wait();
+//!         println!("{}!", num);
+//!     }));
+//! }
+//! for thread in threads {
+//!     thread.join().unwrap();
+//! }
+//! println!("Ignition?");
+//! ```
+//!
+//! Construct a static `SyncLimiter` to rate-limit an entire library.
+//!
+//! ```
+//! #[macro_use]
+//! extern crate lazy_static;
+//! extern crate ratelimit;
+//!
+//! use std::thread;
+//! use std::time::Duration;
+//!
+//! // our rate limiter (kept private to the outside world)
+//! lazy_static! {
+//!     static ref RATE_LIMITER: ratelimit::SyncLimiter = ratelimit::Builder::new()
+//!         .capacity(1)
+//!         .quantum(1)
+//!         .interval(Duration::new(1, 0))
+//!         .build_sync();
+//! }
+//!
+//! fn do_some_work() {
+//!     let handle = RATE_LIMITER.make_handle();
 //!     thread::spawn(move || {
-//!         for x in 0..5 {
-//!             s.send(());
-//!             println!(".");
-//!         }
+//!         handle.wait();
+//!         // do our work
 //!     });
 //! }
 //!
-//! // run the ratelimiter
-//! thread::spawn(move || {
-//!     loop {
-//!         ratelimit.run();
-//!     }
-//! });
+//! # fn main() {
+//! // do a bunch of work
+//! for i in -10..0 {
+//!     do_some_work();
+//! }
+//! # }
+//! ```
 
-#![deny(warnings)]
+#![cfg_attr(test, deny(warnings))]
 
 #![cfg_attr(feature = "unstable", feature(test))]
 
@@ -73,43 +104,153 @@ extern crate shuteye;
 
 
 use shuteye::sleep;
-use std::sync::mpsc;
+use std::sync::{Arc, atomic, mpsc};
+use std::thread::spawn;
 use std::time::{Duration, Instant};
 
-pub struct Config {
+/// A builder for a rate limiter.
+pub struct Builder {
     start: Instant,
     capacity: u32,
     quantum: u32,
     interval: Duration,
 }
 
-pub struct Ratelimit {
-    config: Config,
+/// Single-threaded rate limiter.
+pub struct Limiter {
+    config: Builder,
     t0: Instant,
     available: f64,
     tx: mpsc::SyncSender<()>,
     rx: mpsc::Receiver<()>,
 }
 
-impl Config {
-    /// returns a Ratelimit from the Config
+/// Handler for a multi-threaded rate-limiter.
+#[derive(Clone)]
+pub struct Handle {
+    inner: mpsc::SyncSender<()>,
+}
+unsafe impl Sync for Handle {}
+impl Handle {
+    /// Waits for a single token.
     ///
-    /// # Example
+    /// # Examples
+    ///
     /// ```
-    /// # use ratelimit::Ratelimit;
+    /// # use ratelimit::SyncLimiter;
+    /// # use std::thread;
+    /// let multi = SyncLimiter::default();
     ///
-    /// let mut r = Ratelimit::configure().build();
-    pub fn build(self) -> Ratelimit {
-        Ratelimit::configured(self)
+    /// for i in 0..2 {
+    ///     let s = multi.make_handle();
+    ///     thread::spawn(move || {
+    ///         for x in 0..5 {
+    ///             s.wait();
+    ///             println!(".");
+    ///         }
+    ///     });
+    /// }
+    pub fn wait(&self) {
+        // NOTE: we *don't* unwrap the value here because the only case where this would
+        // actually happen is if the `SyncLimiter` was dropped, thus dropping the original
+        // `Limiter`. this behaviour is documented in the docs for `SyncLimiter`
+        let _ = self.inner.send(());
     }
 
-    /// sets the number of tokens to add per interval
+    /// Waits for `count` tokens.
     ///
-    /// # Example
+    /// # Examples
+    ///
     /// ```
-    /// # use ratelimit::Ratelimit;
+    /// # use ratelimit::SyncLimiter;
+    /// # use std::thread;
+    /// let multi = SyncLimiter::default();
     ///
-    /// let mut r = Ratelimit::configure()
+    /// for i in 0..2 {
+    ///     let s = multi.make_handle();
+    ///     thread::spawn(move || {
+    ///         for x in 0..5 {
+    ///             s.wait_for(1);
+    ///             println!(".");
+    ///         }
+    ///     });
+    /// }
+    pub fn wait_for(&self, count: u32) {
+        for _ in 0..count {
+            self.wait();
+        }
+    }
+
+    /// Checks if we would be able to get a token, and returns whether we got it.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use ratelimit::SyncLimiter;
+    /// let multi = SyncLimiter::default();
+    /// let handle = multi.make_handle();
+    ///
+    /// if handle.try_get() {
+    ///     println!("not limited");
+    /// } else {
+    ///     println!("was limited");
+    /// }
+    #[cfg_attr(feature = "cargo-clippy", allow(match_same_arms))]
+    pub fn try_get(&self) -> bool {
+        match self.inner.try_send(()) {
+            // if it sent, yes, we sent
+            Ok(()) => true,
+
+            // this also counts as being sent, because `wait` will still continue on err
+            Err(mpsc::TrySendError::Disconnected(())) => true,
+
+            // this means that we would have to wait
+            Err(mpsc::TrySendError::Full(())) => false,
+        }
+    }
+}
+
+impl Builder {
+    /// Creates a new builder.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use ratelimit::Builder;
+    /// let mut b = Builder::new();
+    pub fn new() -> Builder {
+        Builder::default()
+    }
+
+    /// Builds a rate limiter from the given config.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use ratelimit::Builder;
+    /// let mut r = Builder::new().build();
+    pub fn build(self) -> Limiter {
+        Limiter::new(self)
+    }
+
+    /// Builds a multi-threaded rate limiter from the given config.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use ratelimit::Builder;
+    /// let mut r = Builder::new().build_sync();
+    pub fn build_sync(self) -> SyncLimiter {
+        Limiter::new(self).sync()
+    }
+
+    /// Sets the number of tokens that are added at each interval.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use ratelimit::Builder;
+    /// let mut r = Builder::new()
     ///     .quantum(100)
     ///     .build();
     pub fn quantum(mut self, quantum: u32) -> Self {
@@ -117,13 +258,13 @@ impl Config {
         self
     }
 
-    /// sets the bucket capacity
+    /// Sets the number of tokens that the bucket can hold.
     ///
-    /// # Example
+    /// # Examples
+    ///
     /// ```
-    /// # use ratelimit::Ratelimit;
-    ///
-    /// let mut r = Ratelimit::configure()
+    /// # use ratelimit::Builder;
+    /// let mut r = Builder::new()
     ///     .capacity(100)
     ///     .build();
     pub fn capacity(mut self, capacity: u32) -> Self {
@@ -131,14 +272,14 @@ impl Config {
         self
     }
 
-    /// set the duration between token adds
+    /// Set the duration between token adds.
     ///
-    /// # Example
+    /// # Examples
+    ///
     /// ```
-    /// # use ratelimit::Ratelimit;
+    /// # use ratelimit::Builder;
     /// # use std::time::Duration;
-    ///
-    /// let mut r = Ratelimit::configure()
+    /// let mut r = Builder::new()
     ///     .interval(Duration::new(2, 0))
     ///     .build();
     pub fn interval(mut self, interval: Duration) -> Self {
@@ -146,27 +287,27 @@ impl Config {
         self
     }
 
-    /// set the frequency in Hz of the ratelimiter
+    /// Alternative to `interval`; sets the number of tokens adds per second.
     ///
-    /// # Example
+    /// # Examples
+    ///
     /// ```
-    /// # use ratelimit::Ratelimit;
-    ///
+    /// # use ratelimit::Builder;
     /// let mut rate = 100_000; // 100kHz
-    /// let mut r = Ratelimit::configure()
+    /// let mut r = Builder::new()
     ///     .frequency(rate)
     ///     .build();
-    pub fn frequency(mut self, cycles: u32) -> Self {
+    pub fn frequency(mut self, per_sec: u32) -> Self {
         let mut interval = Duration::new(1, 0);
-        interval /= cycles;
+        interval /= per_sec;
         self.interval = interval;
         self
     }
 }
 
-impl Default for Config {
-    fn default() -> Config {
-        Config {
+impl Default for Builder {
+    fn default() -> Builder {
+        Builder {
             start: Instant::now(),
             capacity: 1,
             quantum: 1,
@@ -175,40 +316,78 @@ impl Default for Config {
     }
 }
 
-impl Default for Ratelimit {
-    fn default() -> Ratelimit {
-        Config::default().build()
+impl Default for Limiter {
+    fn default() -> Limiter {
+        Builder::default().build()
     }
 }
 
-impl Ratelimit {
-    /// create a new default ratelimit instance
+/// Multi-threaded rate limiter.
+///
+/// If the rate limiter is dropped before any handles, then the handles will always succeed without
+/// any rate limiting. Similarly, if this limiter is leaked, all handles will continue to rate limit
+/// properly, although the thread handling the requests will continue to run until the program
+/// exits.
+pub struct SyncLimiter {
+    run_thread: Arc<atomic::AtomicBool>,
+    handle: Handle,
+}
+impl SyncLimiter {
+    /// Gets a handle to this rate limiter.
     ///
-    /// # Example
+    /// # Examples
+    ///
     /// ```
-    /// # use ratelimit::Ratelimit;
+    /// # use ratelimit::SyncLimiter;
+    /// # use std::thread;
     ///
-    /// let mut r = Ratelimit::new();
-    pub fn new() -> Ratelimit {
-        Default::default()
+    /// let multi = SyncLimiter::default();
+    ///
+    /// for i in 0..2 {
+    ///     let s = multi.make_handle();
+    ///     thread::spawn(move || {
+    ///         for x in 0..5 {
+    ///             s.wait();
+    ///             println!(".");
+    ///         }
+    ///     });
+    /// }
+    pub fn make_handle(&self) -> Handle {
+        self.handle.clone()
     }
+}
+impl From<Limiter> for SyncLimiter {
+    fn from(mut rl: Limiter) -> Self {
+        let atomic = Arc::new(atomic::AtomicBool::new(false));
+        let cond = atomic.clone();
 
-    /// create a new `Config` for building a custom `Ratelimit`
-    ///
-    /// # Example
-    /// ```
-    /// # use ratelimit::Ratelimit;
-    ///
-    /// let mut r = Ratelimit::configure().build();
-    pub fn configure() -> Config {
-        Config::default()
+        let handle = Handle { inner: rl.tx.clone() };
+        spawn(move || while cond.load(atomic::Ordering::Relaxed) {
+            rl.run();
+        });
+
+        SyncLimiter {
+            run_thread: atomic,
+            handle: handle,
+        }
     }
+}
+impl Default for SyncLimiter {
+    fn default() -> Self {
+        Limiter::default().into()
+    }
+}
+impl Drop for SyncLimiter {
+    fn drop(&mut self) {
+        self.run_thread.store(false, atomic::Ordering::Relaxed)
+    }
+}
 
-    // internal function for building a Ratelimit from its Config
-    fn configured(config: Config) -> Ratelimit {
+impl Limiter {
+    fn new(config: Builder) -> Limiter {
         let (tx, rx) = mpsc::sync_channel(config.capacity as usize);
         let t0 = config.start;
-        Ratelimit {
+        Limiter {
             config: config,
             t0: t0,
             available: 0.0,
@@ -217,25 +396,14 @@ impl Ratelimit {
         }
     }
 
-    /// run the ratelimiter
-    ///
-    /// # Example
-    /// ```
-    /// # use ratelimit::Ratelimit;
-    ///
-    /// let mut r = Ratelimit::new();
-    ///
-    /// let sender = r.clone_sender();
-    /// let _ = sender.try_send(());
-    ///
-    /// r.run(); // invoke in a tight-loop in its own thread
-    pub fn run(&mut self) {
+    // runs the rate limiter; for multithreaded version only
+    fn run(&mut self) {
         let quantum = self.config.quantum;
-        self.block(quantum);
+        self.wait_for(quantum);
         let mut unused = 0;
         for _ in 0..self.config.quantum {
             match self.rx.try_recv() {
-                Ok(..) => {}
+                Ok(()) => {}
                 Err(_) => {
                     unused += 1;
                 }
@@ -244,41 +412,46 @@ impl Ratelimit {
         self.give(unused as f64);
     }
 
-    /// return clone of SyncSender for client use
+    /// Promotes this rate-limiter to a multithreaded version.
     ///
-    /// # Example
+    /// # Examples
+    ///
     /// ```
-    /// # use ratelimit::*;
-    ///
-    /// let mut r = Ratelimit::new();
-    ///
-    /// let sender = r.clone_sender();
-    ///
-    /// match sender.try_send(()) {
-    ///     Ok(_) => {
-    ///         println!("not limited");
-    ///     },
-    ///     Err(_) => {
-    ///         println!("was limited");
-    ///     },
-    /// }
-    pub fn clone_sender(&mut self) -> mpsc::SyncSender<()> {
-        self.tx.clone()
+    /// # use ratelimit::Limiter;
+    /// let mut s = Limiter::default().sync();
+    pub fn sync(self) -> SyncLimiter {
+        SyncLimiter::from(self)
     }
 
-    /// this call is the blocking API of Ratelimit
+    /// Waits for a single token.
     ///
-    /// # Example
+    /// # Examples
+    ///
     /// ```
-    /// # use ratelimit::Ratelimit;
-    ///
-    /// let mut r = Ratelimit::new();
+    /// # use ratelimit::Limiter;
+    /// let mut r = Limiter::default();
     /// for i in -10..0 {
     ///     println!("T {}...", i);
-    ///     r.block(1);
+    ///     r.wait();
     /// }
     /// println!("Ignition!");
-    pub fn block(&mut self, count: u32) {
+    pub fn wait(&mut self) {
+        self.wait_for(1)
+    }
+
+    /// Waits for `count` tokens.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use ratelimit::Limiter;
+    /// let mut r = Limiter::default();
+    /// for i in -10..0 {
+    ///     println!("T {}...", i);
+    ///     r.wait_for(1);
+    /// }
+    /// println!("Ignition!");
+    pub fn wait_for(&mut self, count: u32) {
         if let Some(wait) = self.take(Instant::now(), count) {
             sleep(wait);
         }
@@ -336,7 +509,7 @@ impl Ratelimit {
 }
 
 // returns the number of cycles of period length within the duration
-pub fn cycles(duration: Duration, period: Duration) -> f64 {
+fn cycles(duration: Duration, period: Duration) -> f64 {
     let d = 1_000_000_000 * duration.as_secs() as u64 + duration.subsec_nanos() as u64;
     let p = 1_000_000_000 * period.as_secs() as u64 + period.subsec_nanos() as u64;
     d as f64 / p as f64
@@ -378,7 +551,7 @@ mod tests {
 
     #[test]
     fn test_give() {
-        let mut r = Ratelimit::configure().capacity(1000).build();
+        let mut r = Builder::new().capacity(1000).build();
 
         assert_eq!(r.available, 0.0);
 
@@ -391,7 +564,7 @@ mod tests {
 
     #[test]
     fn test_tick() {
-        let mut r = Ratelimit::configure().capacity(1000).build();
+        let mut r = Builder::new().capacity(1000).build();
         let t = r.t0;
         r.tick(t + Duration::new(1, 0));
         assert_eq!(r.available, 1.0);
@@ -402,10 +575,7 @@ mod tests {
 
     #[test]
     fn test_take() {
-        let mut r = Ratelimit::configure()
-            .frequency(1000)
-            .capacity(1000)
-            .build();
+        let mut r = Builder::new().frequency(1000).capacity(1000).build();
         let t = r.t0;
         assert_eq!(r.take(t + Duration::new(1, 0), 1000), None);
         assert_eq!(
@@ -422,40 +592,84 @@ mod tests {
     #[cfg(feature = "unstable")]
     #[bench]
     fn block_1_million_per_second_1000ns(b: &mut test::Bencher) {
-        let mut r = Ratelimit::configure()
+        let mut r = Builder::new()
             .capacity(10000)
             .frequency(1_000_000)
             .build();
-        b.iter(|| r.block(1));
+        b.iter(|| r.wait());
     }
 
     #[cfg(feature = "unstable")]
     #[bench]
     fn block_2_million_per_second_500ns(b: &mut test::Bencher) {
-        let mut r = Ratelimit::configure()
+        let mut r = Builder::new()
             .capacity(10000)
             .frequency(2_000_000)
             .build();
-        b.iter(|| r.block(1));
+        b.iter(|| r.wait());
     }
 
     #[cfg(feature = "unstable")]
     #[bench]
     fn block_10_million_per_second_100ns(b: &mut test::Bencher) {
-        let mut r = Ratelimit::configure()
+        let mut r = Builder::new()
             .capacity(10000)
             .frequency(10_000_000)
             .build();
-        b.iter(|| r.block(1));
+        b.iter(|| r.wait());
     }
 
     #[cfg(feature = "unstable")]
     #[bench]
     fn block_20_million_per_second_50ns(b: &mut test::Bencher) {
-        let mut r = Ratelimit::configure()
+        let mut r = Builder::new()
             .capacity(10000)
             .frequency(20_000_000)
             .build();
-        b.iter(|| r.block(1));
+        b.iter(|| r.wait());
+    }
+
+    #[cfg(feature = "unstable")]
+    #[bench]
+    fn block_1_million_per_second_1000ns_sync(b: &mut test::Bencher) {
+        let r = Builder::new()
+            .capacity(10000)
+            .frequency(1_000_000)
+            .build_sync();
+        let h = r.make_handle();
+        b.iter(|| h.wait());
+    }
+
+    #[cfg(feature = "unstable")]
+    #[bench]
+    fn block_2_million_per_second_500ns_sync(b: &mut test::Bencher) {
+        let r = Builder::new()
+            .capacity(10000)
+            .frequency(2_000_000)
+            .build_sync();
+        let h = r.make_handle();
+        b.iter(|| h.wait());
+    }
+
+    #[cfg(feature = "unstable")]
+    #[bench]
+    fn block_10_million_per_second_100ns_sync(b: &mut test::Bencher) {
+        let r = Builder::new()
+            .capacity(10000)
+            .frequency(10_000_000)
+            .build_sync();
+        let h = r.make_handle();
+        b.iter(|| h.wait());
+    }
+
+    #[cfg(feature = "unstable")]
+    #[bench]
+    fn block_20_million_per_second_50ns_sync(b: &mut test::Bencher) {
+        let r = Builder::new()
+            .capacity(10000)
+            .frequency(20_000_000)
+            .build_sync();
+        let h = r.make_handle();
+        b.iter(|| h.wait());
     }
 }
