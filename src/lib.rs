@@ -100,12 +100,8 @@
 #[cfg(feature = "unstable")]
 extern crate test;
 
-extern crate shuteye;
-
-
-use shuteye::sleep;
 use std::sync::{Arc, atomic, mpsc};
-use std::thread::spawn;
+use std::thread::{sleep, spawn};
 use std::time::{Duration, Instant};
 
 /// A builder for a rate limiter.
@@ -522,8 +518,6 @@ mod tests {
 
     use super::*;
     use std::time::Duration;
-
-    extern crate shuteye;
 
     #[test]
     fn test_cycles() {
