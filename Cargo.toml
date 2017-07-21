@@ -18,5 +18,8 @@ keywords = [ "ratelimit", "tokenbucket", "rate", "token", "bucket" ]
 [dependencies]
 shuteye = "0.3.2"
 
+[dev-dependencies]
+lazy_static = "0.2.8"
+
 [features]
 unstable = []
