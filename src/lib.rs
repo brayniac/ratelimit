@@ -70,7 +70,8 @@
 //! println!("time's up!");
 //! ```
 
-#![cfg_attr(test, deny(warnings))]
+#![cfg_attr(feature = "cargo-clippy", deny(missing_docs))]
+#![cfg_attr(feature = "cargo-clippy", deny(warnings))]
 #![cfg_attr(feature = "unstable", feature(test))]
 
 #[cfg(feature = "unstable")]
@@ -422,7 +423,7 @@ impl Limiter {
                 }
             }
         }
-        self.give(unused as f64);
+        self.give(f64::from(unused));
     }
 
     /// Create a Handle for multi-thread use
@@ -484,8 +485,10 @@ impl Limiter {
     fn give(&mut self, count: f64) {
         self.available += count;
 
-        if self.available >= self.config.capacity as f64 {
-            self.available = self.config.capacity as f64;
+        let capacity = f64::from(self.config.capacity);
+
+        if self.available >= capacity {
+            self.available = capacity;
         }
     }
 
@@ -524,7 +527,7 @@ impl Limiter {
     fn tick(&mut self, t1: Instant) {
         let t0 = self.t0;
         let cycles = cycles(t1.duration_since(t0), self.config.interval);
-        let tokens = cycles * self.config.quantum as f64;
+        let tokens = cycles * f64::from(self.config.quantum);
 
         self.give(tokens);
         self.t0 = t1;
@@ -533,8 +536,8 @@ impl Limiter {
 
 // returns the number of cycles of period length within the duration
 fn cycles(duration: Duration, period: Duration) -> f64 {
-    let d = 1_000_000_000 * duration.as_secs() as u64 + duration.subsec_nanos() as u64;
-    let p = 1_000_000_000 * period.as_secs() as u64 + period.subsec_nanos() as u64;
+    let d = 1_000_000_000 * duration.as_secs() as u64 + u64::from(duration.subsec_nanos());
+    let p = 1_000_000_000 * period.as_secs() as u64 + u64::from(period.subsec_nanos());
     d as f64 / p as f64
 }
 
