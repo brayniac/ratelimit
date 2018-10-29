@@ -464,6 +464,25 @@ impl Limiter {
         self.wait_for(1)
     }
 
+    /// Non-blocking wait for one token.
+    /// Returns Ok(()) if no wait required.
+    /// Returns Err(()) if wait would block.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use ratelimit::Limiter;
+    /// let mut limiter = Limiter::new();
+    ///
+    /// if limiter.try_wait().is_ok() {
+    ///     println!("token granted");
+    /// } else {
+    ///     println!("would block");
+    /// }
+    pub fn try_wait(&mut self) -> Result<(), ()> {
+        self.try_wait_for(1)
+    }
+
     /// Blocking wait for `count` tokens.
     ///
     /// # Example
@@ -479,6 +498,28 @@ impl Limiter {
         if let Some(wait) = self.take(Instant::now(), count) {
             sleep(wait);
         }
+    }
+
+    // Non-blocking wait for `count` token.
+    /// Returns Ok(()) if no wait required.
+    /// Returns Err(()) if wait would block.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use ratelimit::Limiter;
+    /// let mut limiter = Limiter::new();
+    ///
+    /// if limiter.try_wait_for(2).is_ok() {
+    ///     println!("tokens granted");
+    /// } else {
+    ///     println!("would block");
+    /// }
+    pub fn try_wait_for(&mut self, count: usize) -> Result<(), ()> {
+        if let Some(_wait) = self.take(Instant::now(), count) {
+            return Err(())
+        }
+        Ok(())
     }
 
     // Internal function to add tokens to the bucket
