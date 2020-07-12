@@ -243,7 +243,6 @@ impl Builder {
         Builder::default()
     }
 
-
     /// Returns a Limiter from the Builder.
     ///
     /// # Example
@@ -517,7 +516,7 @@ impl Limiter {
     /// }
     pub fn try_wait_for(&mut self, count: usize) -> Result<(), ()> {
         if let Some(_wait) = self.take(Instant::now(), count) {
-            return Err(())
+            return Err(());
         }
         Ok(())
     }
@@ -535,7 +534,6 @@ impl Limiter {
 
     // Return time to sleep until `count` tokens are available
     fn take(&mut self, t1: Instant, count: usize) -> Option<Duration> {
-
         // we don't need any tokens, just return
         if count == 0 {
             return None;
@@ -705,7 +703,7 @@ mod tests {
             .interval(Duration::new(0, 1_000))
             .build();
         let mut h = r.make_handle();
-        thread::spawn(move || { r.run(); });
+        thread::spawn(move || r.run());
         b.iter(|| h.wait());
     }
 
@@ -717,7 +715,7 @@ mod tests {
             .interval(Duration::new(0, 500))
             .build();
         let mut h = r.make_handle();
-        thread::spawn(move || { r.run(); });
+        thread::spawn(move || r.run());
         b.iter(|| h.wait());
     }
 
@@ -729,7 +727,7 @@ mod tests {
             .interval(Duration::new(0, 100))
             .build();
         let mut h = r.make_handle();
-        thread::spawn(move || { r.run(); });
+        thread::spawn(move || r.run());
         b.iter(|| h.wait());
     }
 
@@ -741,7 +739,7 @@ mod tests {
             .interval(Duration::new(0, 50))
             .build();
         let mut h = r.make_handle();
-        thread::spawn(move || { r.run(); });
+        thread::spawn(move || r.run());
         b.iter(|| h.wait());
     }
 }
