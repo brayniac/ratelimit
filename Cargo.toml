@@ -18,7 +18,7 @@ keywords = [ "ratelimit", "tokenbucket", "rate", "token", "bucket" ]
 [dependencies]
 
 [dev-dependencies]
-lazy_static = "0.2.8"
+lazy_static = "1.4.0"
 
 [features]
 unstable = []
