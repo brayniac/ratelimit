@@ -368,14 +368,14 @@ impl Limiter {
         }
         let t0 = config.start;
         Limiter {
-            config: config,
-            t0: t0,
+            config,
+            t0,
             available: 0.0,
             tx: Handle {
                 inner: tx,
                 available: 0,
             },
-            rx: rx,
+            rx,
         }
     }
 
