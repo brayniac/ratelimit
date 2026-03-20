@@ -1,0 +1,80 @@
+# ratelimit
+
+A lock-free token bucket ratelimiter for rate limiting and admission control.
+
+## Getting Started
+
+```bash
+cargo add ratelimit
+```
+
+## Usage
+
+```rust
+use ratelimit::Ratelimiter;
+
+// 10,000 requests/s
+let ratelimiter = Ratelimiter::new(10_000);
+
+loop {
+    match ratelimiter.try_wait() {
+        Ok(()) => {
+            // token acquired -- perform rate-limited action
+            break;
+        }
+        Err(wait) => {
+            // rate limited -- sleep and retry
+            std::thread::sleep(wait);
+        }
+    }
+}
+```
+
+For more control over burst capacity and initial tokens:
+
+```rust
+use ratelimit::Ratelimiter;
+
+let ratelimiter = Ratelimiter::builder(10_000)
+    .max_tokens(50_000)       // allow up to 5 seconds of burst
+    .initial_available(1_000) // start with some tokens available
+    .build()
+    .unwrap();
+```
+
+The rate can be changed dynamically at runtime:
+
+```rust
+use ratelimit::Ratelimiter;
+
+let ratelimiter = Ratelimiter::new(1_000);
+// later...
+ratelimiter.set_rate(5_000);
+```
+
+A rate of 0 means unlimited -- `try_wait()` will always succeed.
+
+## Design
+
+This crate implements a lock-free token bucket algorithm. Tokens accumulate
+continuously based on elapsed time using scaled integer arithmetic for
+sub-token precision. All synchronization is done with atomic CAS operations,
+making it safe to share across threads with no mutex contention.
+
+Key parameters:
+
+- **rate** -- tokens per second. The single knob for controlling throughput.
+- **max tokens** -- bucket capacity, bounding burst size. Defaults to `rate`
+  (1 second of burst).
+- **initial available** -- tokens available at construction. Defaults to 0.
+
+## Links
+
+- [API Documentation (docs.rs)](https://docs.rs/ratelimit/)
+- [Crate (crates.io)](https://crates.io/crates/ratelimit)
+- [Repository (GitHub)](https://github.com/iopsystems/ratelimit)
+
+## License
+
+Licensed under either of Apache License, Version 2.0 or MIT license at your
+option.

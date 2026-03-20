@@ -1,0 +1,16 @@
+[package]
+name = "ratelimit"
+version = "1.0.0-alpha.0"
+authors = ["Brian Martin <brian@iop.systems>"]
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "A lock-free token bucket ratelimiter"
+homepage = "https://github.com/iopsystems/ratelimit"
+repository = "https://github.com/iopsystems/ratelimit"
+readme = "README.md"
+keywords = ["ratelimit", "token-bucket", "rate-limiter", "throttle", "concurrency"]
+categories = ["concurrency", "algorithms"]
+rust-version = "1.85"
+
+[dependencies]
+thiserror = "2.0"
